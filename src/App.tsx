@@ -909,7 +909,7 @@ const App: React.FC = () => {
                   value={landscapeDescription}
                   onChange={(e) => setLandscapeDescription(e.target.value.slice(0, 800))}
                   placeholder="Describe cómo te sientes hoy como un paisaje..."
-                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-[10px] text-slate-300 focus:outline-none focus:border-pink-500/40 transition-all h-24 resize-none"
+                  className="w-full glass-input glass-input-pink rounded-xl p-3 text-[10px] text-slate-300 h-24 resize-none"
                 />
                 <div className="flex justify-end mt-1">
                   <span className="text-[7px] text-slate-600 uppercase font-mono">{landscapeDescription.length}/800</span>
@@ -940,7 +940,7 @@ const App: React.FC = () => {
               ))}
               <button 
                 onClick={handleGenerateLandscape}
-                className="w-full mt-4 py-3 bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border border-pink-500/20"
+                className="w-full mt-4 py-3 glass-button glass-button-pink rounded-xl text-[9px] font-black uppercase tracking-widest text-pink-400"
               >
                 Generar Paisaje IA
               </button>
@@ -1449,11 +1449,11 @@ const App: React.FC = () => {
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
               placeholder="Consulta sobre tu bio-regulación..." 
-              className="flex-grow bg-black/40 border border-white/10 rounded-2xl px-6 py-4 text-sm focus:outline-none focus:border-purple-400 transition-all text-white"
+              className="flex-grow glass-input glass-input-purple rounded-2xl px-6 py-4 text-sm text-white"
             />
             <button 
               onClick={sendMessage} 
-              className="p-4 bg-purple-500/20 rounded-2xl hover:bg-purple-500/40 border border-purple-500/20 transition-all text-purple-400"
+              className="p-4 glass-button glass-button-purple rounded-2xl text-purple-400"
             >
               <Send className="w-5 h-5" />
             </button>

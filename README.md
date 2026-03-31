@@ -1,14 +1,66 @@
-# Analista Simbólico Emocional
+# Dream Interpretation AI
 
-Esta es una aplicación web que utiliza la API de Gemini para interpretar descripciones de paisajes como proyecciones del estado emocional humano. La aplicación actúa como un "Analista Simbólico Emocional", proporcionando interpretaciones en diferentes niveles de profundidad (suave, medio, profundo).
+This is a web application that uses the Google Gemini API to interpret the meaning of dreams. The user can input a dream description, and the AI will provide a detailed interpretation based on common dream symbols and psychological theories.
 
-## Cómo funciona
+## Features
 
-El usuario introduce la descripción de un paisaje y selecciona un nivel de profundidad. La aplicación envía esta información a un backend que, a su vez, utiliza la API de Gemini con un prompt específico para generar una interpretación simbólica y emocional del paisaje descrito. La interpretación se devuelve al usuario, ofreciendo una perspectiva sobre sus posibles estados emocionales.
+- **Dream Input:** A simple and intuitive interface for users to write down their dreams.
+- **AI-Powered Interpretation:** Leverages the power of the Google Gemini API to provide insightful and detailed dream interpretations.
+- **Modern UI:** A clean and modern user interface built with React and Tailwind CSS.
 
-### Características
+## Tech Stack
 
-- **Interpretación Emocional de Paisajes:** Transforma descripciones de paisajes en análisis emocionales.
-- **Niveles de Profundidad:** Permite al usuario elegir entre un análisis suave, medio o profundo.
-- **Detección de Evasión Emocional:** En los niveles medio y profundo, la IA puede señalar posibles puntos ciegos o evasiones emocionales.
-- **Integración y Reflexión:** Proporciona una breve guía de integración y una pregunta reflexiva para ayudar al usuario a procesar la interpretación.
+- **Frontend:** React, Vite, Tailwind CSS
+- **Backend:** Express.js, Node.js
+- **AI:** Google Gemini API
+- **Language:** TypeScript
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js (v18 or higher)
+- npm
+- A Google Gemini API key
+
+### Installation
+
+1.  **Clone the repository:**
+
+    ```bash
+    git clone <repository-url>
+    cd <repository-directory>
+    ```
+
+2.  **Install dependencies:**
+
+    ```bash
+    npm install
+    ```
+
+3.  **Set up environment variables:**
+
+    Create a `.env` file in the root of the project and add your Google Gemini API key:
+
+    ```
+    GEMINI_API_KEY=<your-api-key>
+    ```
+
+### Running the Application
+
+-   **Development mode:**
+
+    ```bash
+    npm run dev
+    ```
+
+    This will start the development server with hot-reloading.
+
+-   **Production mode:**
+
+    ```bash
+    npm run build
+    npm run start
+    ```
+
+    This will build the application for production and start the production server.

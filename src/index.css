@@ -1,25 +1,33 @@
-@import "tailwindcss";
-
-@theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --bg-dark: #050810;
-  --cerebro: #60a5fa;
-  --corazon: #f87171;
-  --cuerpo: #4ade80;
-  --alma: #c084fc;
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #0f172a;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-  background-color: var(--bg-dark);
-  color: #f8fafc;
-  overflow-x: hidden;
-  background-image: 
-    radial-gradient(circle at 10% 10%, rgba(96, 165, 250, 0.03) 0%, transparent 40%),
-    radial-gradient(circle at 90% 90%, rgba(192, 132, 252, 0.03) 0%, transparent 40%);
+  background-image: radial-gradient(
+      circle at 10% 10%,
+      rgba(132, 204, 22, 0.03) 0%,
+      transparent 40%
+    ),
+    radial-gradient(
+      circle at 90% 90%,
+      rgba(192, 132, 252, 0.03) 0%,
+      transparent 40%
+    );
   min-height: 100vh;
 }
 
@@ -28,90 +36,51 @@ body {
   backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 1.5rem;
-  transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+  box-shadow: 0 0 40px rgba(22, 163, 74, 0.1);
 }
 
-.glass-card:hover {
-  border-color: rgba(255, 255, 255, 0.15);
+/* Base styling for form elements */
+.glass-input,
+.glass-button {
   background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease-in-out;
 }
 
-.stat-bar {
-  height: 6px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.02);
-  overflow: hidden;
+.glass-input:focus {
+  outline: none;
 }
 
-.stat-fill {
-  height: 100%;
-  transition: width 1.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+.glass-button:focus {
+  outline: none;
 }
 
-@keyframes scan {
-  0% { transform: translateY(-100%); opacity: 0; }
-  50% { opacity: 1; }
-  100% { transform: translateY(100%); opacity: 0; }
+/* Purple Theme */
+.glass-input-purple:focus {
+  border-color: rgba(192, 132, 252, 0.5); /* purple-400 */
+  box-shadow: 0 0 20px rgba(192, 132, 252, 0.2);
 }
 
-.scanning::after {
-  content: "";
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: linear-gradient(to bottom, transparent, rgba(192, 132, 252, 0.2), transparent);
-  animation: scan 2.5s linear infinite;
-  pointer-events: none;
+.glass-button-purple:hover {
+  background: rgba(192, 132, 252, 0.2);
+  border-color: rgba(192, 132, 252, 0.5);
 }
 
-.custom-scrollbar::-webkit-scrollbar { width: 3px; }
-.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
-
-.sleep-badge {
-  background: linear-gradient(135deg, #1e293b, #0f172a);
-  border: 1px solid rgba(255,255,255,0.05);
+.glass-button-purple:focus {
+  box-shadow: 0 0 20px rgba(192, 132, 252, 0.2);
 }
 
-.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
-  color: #60a5fa;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-size: 10px;
-  margin-top: 1.5rem;
-  margin-bottom: 0.5rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+/* Pink Theme */
+.glass-input-pink:focus {
+  border-color: rgba(236, 72, 153, 0.5); /* pink-500 */
+  box-shadow: 0 0 20px rgba(236, 72, 153, 0.2);
 }
 
-.markdown-body h3::before {
-  content: "";
-  display: block;
-  width: 4px;
-  height: 4px;
-  background: currentColor;
-  border-radius: 50%;
+.glass-button-pink:hover {
+  background: rgba(236, 72, 153, 0.2);
+  border-color: rgba(236, 72, 153, 0.5);
 }
 
-.markdown-body p {
-  margin-bottom: 1rem;
-}
-
-.markdown-body ul {
-  list-style-type: disc;
-  padding-left: 1rem;
-  margin-bottom: 1rem;
-}
-
-.markdown-body h1:first-child, 
-.markdown-body h2:first-child, 
-.markdown-body h3:first-child, 
-.markdown-body h4:first-child {
-  margin-top: 0;
-}
-
-.markdown-body strong {
-  color: #f8fafc;
-  font-weight: 600;
+.glass-button-pink:focus {
+  box-shadow: 0 0 20px rgba(236, 72, 153, 0.2);
 }
