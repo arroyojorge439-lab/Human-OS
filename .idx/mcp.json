@@ -1,7 +1,14 @@
 {
   "mcpServers": {
     "gemini": {
-      "type": "gemini"
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-everything"
+      ],
+      "env": {
+        "API_KEY": "tu_llave_aqui"
+      }
     }
   }
 }
