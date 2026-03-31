@@ -2,6 +2,33 @@
 
 This is a web application that uses the Google Gemini API to interpret the meaning of dreams. The user can input a dream description, and the AI will provide a detailed interpretation based on common dream symbols and psychological theories.
 
+## Flowchart
+
+```mermaid
+graph TD;
+    A[User enters dream description] --> B{Send to Backend};
+    B --> C{Backend sends to Gemini API};
+    C --> D{Gemini API processes dream};
+    D --> E{Gemini API returns interpretation};
+    E --> F{Backend sends interpretation to Frontend};
+    F --> G[Frontend displays interpretation to user];
+```
+
+## Metrics
+
+### Quantitative Metrics
+
+*   **API Response Time:** The time it takes for the Gemini API to return an interpretation.
+*   **User Satisfaction Score:** A rating (e.g., 1-5 stars) that users can give to each interpretation.
+*   **Number of Interpretations:** The total number of dreams interpreted by the application.
+*   **Error Rate:** The percentage of API calls that result in an error.
+
+### Qualitative Metrics
+
+*   **Interpretation Quality:** The coherence, relevance, and insightfulness of the dream interpretations. This can be measured through user feedback and expert review.
+*   **User Feedback:** Open-ended feedback from users about their experience with the application.
+*   **Usefulness:** How helpful users find the interpretations in understanding their dreams.
+
 ## Features
 
 - **Dream Input:** A simple and intuitive interface for users to write down their dreams.
