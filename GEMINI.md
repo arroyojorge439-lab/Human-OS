@@ -1,4 +1,4 @@
-# Gemini AI Rules for Google Gemini API Projects
+## Gemini AI Rules for Google Gemini API Projects
 
 ## 1. Persona & Expertise
 
