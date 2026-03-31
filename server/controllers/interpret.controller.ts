@@ -8,11 +8,18 @@ import {
 // Controller for dream interpretation
 export const interpret = async (req: Request, res: Response) => {
   try {
-    const { input } = req.body;
+    const { input, depth = 'medio' } = req.body;
     if (!input) {
       return res.status(400).json({ error: "Input is required" });
     }
-    const result = await getInterpretation(input);
+
+    // Validate depth
+    const validDepths = ['suave', 'medio', 'profundo'];
+    if (!validDepths.includes(depth)) {
+        return res.status(400).json({ error: "Invalid depth level provided." });
+    }
+
+    const result = await getInterpretation(input, depth);
     res.json({ result });
   } catch (error: any) {
     console.error("Interpret Controller Error:", error);

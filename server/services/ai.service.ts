@@ -3,7 +3,6 @@ import { config } from "../config/env.js";
 import fs from "fs";
 import path from "path";
 
-// 1. API Key Check: Ensure the API key is available before doing anything else.
 if (!config.GEMINI_API_KEY) {
   throw new Error(
     "GEMINI_API_KEY is not defined. Please set it in your .env file."
@@ -12,21 +11,43 @@ if (!config.GEMINI_API_KEY) {
 
 const genAI = new GoogleGenerativeAI(config.GEMINI_API_KEY);
 
+// --- Prompt Engineering Core ---
+
+const promptPath = path.join(process.cwd(), "shared/prompts/interpret.prompt.json");
+const promptConfig = JSON.parse(fs.readFileSync(promptPath, "utf-8"));
+
+function buildSystemPrompt(depthLevel: 'suave' | 'medio' | 'profundo') {
+  const level = promptConfig.depth_levels[depthLevel] || promptConfig.depth_levels.medio;
+
+  const sections = [
+    promptConfig.persona,
+    "\n--- REGLAS BASE ---\n" + promptConfig.base_rules.join("\n"),
+    "\n--- GUARDIANES DE SEGURIDAD ---\n" + promptConfig.safety_guardrails.join("\n"),
+    `\n--- NIVEL DE PROFUNDIDAD: ${depthLevel.toUpperCase()} ---\n` + level.rules.join("\n"),
+    "\n--- ESTRUCTURA DE RESPUESTA OBLIGATORIA ---\n" + promptConfig.response_structure.join("\n"),
+  ];
+
+  // Add special functions based on depth
+  if (promptConfig.special_functions.blind_spot_detection.enabled_levels.includes(depthLevel)) {
+    const func = promptConfig.special_functions.blind_spot_detection;
+    sections.push(`\n--- FUNCIÓN ADICIONAL: ${func.section_title} ---\n` + func.rules.join("\n") + "\nEjemplos de frases: " + func.examples.join(", "));
+  }
+
+  const integration = promptConfig.special_functions.integration_step;
+  sections.push(`\n--- FUNCIÓN ADICIONAL: ${integration.section_title} ---\n` + integration.rules.join("\n") + `\nAdaptación al tono de ${depthLevel}: ${integration.level_specific_tone[depthLevel]}` + "\nEjemplos: " + integration.examples.join(", "));
+
+  const question = promptConfig.special_functions.reflective_question;
+  sections.push(`\n--- FUNCIÓN ADICIONAL: ${question.section_title} ---\n` + question.rules.join("\n") + `\nEjemplo para ${depthLevel}: ${question.level_specific_examples[depthLevel]}`);
+  
+  // Add edge cases
+  sections.push("\n--- CASOS BORDE ---\n" + promptConfig.edge_cases.ambiguous_input.instruction + "\n" + promptConfig.edge_cases.high_conflict_in_low_depth.instruction);
+
+  return sections.join("\n\n");
+}
+
+
 // --- Text Generation Service ---
 
-// Helper to read the system prompt from a file
-const interpretPromptPath = path.join(
-  process.cwd(),
-  "shared/prompts/interpret.prompt.txt"
-);
-const interpretSystemPrompt = fs.readFileSync(interpretPromptPath, "utf-8");
-
-/**
- * A generalized function to generate text content using the Gemini API.
- * @param systemPrompt The system instruction to guide the model.
- * @param userPrompt The user-provided prompt.
- * @returns The generated text.
- */
 async function generateText(systemPrompt: string, userPrompt: string) {
   const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
@@ -39,28 +60,21 @@ async function generateText(systemPrompt: string, userPrompt: string) {
   return response.text();
 }
 
-// Specific function for dream interpretation
-export async function getInterpretation(input: string) {
-  return generateText(interpretSystemPrompt, input);
+export async function getInterpretation(input: string, depth: 'suave' | 'medio' | 'profundo') {
+  const systemPrompt = buildSystemPrompt(depth);
+  return generateText(systemPrompt, input);
 }
 
-// Specific function for a simple, role-based response
 export async function getSimpleResponse(prompt: string, role: string) {
-  return generateText(role, prompt);
+  // If no specific role is provided, use a generic one.
+  const systemPrompt = role || "Eres un asistente de IA útil.";
+  return generateText(systemPrompt, prompt);
 }
 
-// --- Image Generation/Analysis Service ---
+// --- Image Analysis Service ---
 
-/**
- * This function uses a vision model. It can describe images, but not generate them.
- * The model name has been corrected to a valid vision model.
- * @param prompt The text prompt to send to the vision model.
- * @returns The generated text based on the prompt.
- */
 export async function analyzeImage(prompt: string) {
-  // Note: This model is for understanding images, not generating them.
   const model = genAI.getGenerativeModel({ model: "gemini-pro-vision" });
-
   const result = await model.generateContent(prompt);
   const response = result.response;
   return response.text();
