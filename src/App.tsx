@@ -90,6 +90,15 @@ const App: React.FC = () => {
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  const handleAIError = useCallback((error: any) => {
+    const msg = error.message || String(error);
+    if (msg.toLowerCase().includes('origin') || msg.toLowerCase().includes('allowed')) {
+      setKeyError(msg);
+      setHasKey(false);
+    }
+    console.error("AI Error:", error);
+  }, []);
+
   // --- Memoized Calculations ---
   const decisions = useMemo(() => runDecisionEngine(emotionalState, bioState.estres), [emotionalState, bioState.estres]);
   
@@ -105,12 +114,22 @@ const App: React.FC = () => {
     const checkKey = async () => {
       try {
         await new Promise(resolve => setTimeout(resolve, 800));
+        let selected = false;
         if (window.aistudio?.hasSelectedApiKey) {
-          const selected = await window.aistudio.hasSelectedApiKey();
-          setHasKey(selected);
+          selected = await window.aistudio.hasSelectedApiKey();
         } else {
-          const localKey = !!process.env.GEMINI_API_KEY || !!process.env.API_KEY;
-          setHasKey(localKey);
+          selected = !!process.env.API_KEY || !!process.env.GEMINI_API_KEY;
+        }
+        
+        setHasKey(selected);
+
+        // Test call to check for domain restrictions (Origin not allowed)
+        if (selected) {
+          try {
+            await callGemini("test", "test");
+          } catch (error: any) {
+            handleAIError(error);
+          }
         }
       } catch (e) {
         setHasKey(false);
@@ -189,10 +208,7 @@ const App: React.FC = () => {
       }
       setChatMessages(prev => [...prev, { role: 'ai', content: cleanResult }]);
     } catch (error: any) {
-      if (error.message?.includes('origin not allowed')) {
-        setKeyError(error.message);
-        setHasKey(false);
-      }
+      handleAIError(error);
     }
   };
 
@@ -223,10 +239,7 @@ const App: React.FC = () => {
       const img = await generateImage(`Digital art, cinematic landscape: ${description}`);
       if (img) setLandscapeImage(img);
     } catch (error: any) {
-      if (error.message?.includes('origin not allowed')) {
-        setKeyError(error.message);
-        setHasKey(false);
-      }
+      handleAIError(error);
     } finally {
       setIsGeneratingLandscape(false);
     }
@@ -240,10 +253,7 @@ const App: React.FC = () => {
       const img = await generateImage(prompt);
       if (img) setEvolutionaryArt(img);
     } catch (error: any) {
-      if (error.message?.includes('origin not allowed')) {
-        setKeyError(error.message);
-        setHasKey(false);
-      }
+      handleAIError(error);
     } finally {
       setIsGeneratingArt(false);
     }
@@ -256,7 +266,8 @@ const App: React.FC = () => {
       const res = await callGemini("Dame 3 sugerencias de bienestar rápidas en JSON: [{\"title\": \"...\", \"desc\": \"...\"}]");
       const jsonStr = res.replace(/```json|```/g, '').trim();
       setProtocols(JSON.parse(jsonStr));
-    } catch (e) {
+    } catch (error: any) {
+      handleAIError(error);
       setProtocols([{ title: "Error", desc: "No se pudieron sincronizar los protocolos." }]);
     } finally {
       setIsLoadingProtocols(false);
@@ -273,20 +284,68 @@ const App: React.FC = () => {
   }
 
   if (hasKey === false) {
+    const currentOrigin = window.location.origin;
+    const isOriginError = keyError?.toLowerCase().includes('origin not allowed');
+
     return (
       <div className="min-h-screen bg-[#050505] flex items-center justify-center p-6">
-        <div className="max-w-md w-full glass-card p-8 border-red-500/20 text-center">
-          <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-6" />
-          <h2 className="text-2xl font-black uppercase tracking-tighter mb-4">Acceso Restringido</h2>
-          <p className="text-slate-400 text-sm mb-8 leading-relaxed">
-            {keyError ? "Tu API Key tiene restricciones de dominio." : "No se detectó una API Key válida para activar el núcleo de IA."}
-          </p>
-          <button 
-            onClick={handleSelectKey}
-            className="w-full py-4 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-2xl font-black uppercase tracking-widest border border-red-500/20 transition-all"
-          >
-            Configurar Llave
-          </button>
+        <div className="max-w-2xl w-full glass-card p-10 border-red-500/20">
+          <div className="flex items-center gap-4 mb-8">
+            <div className="p-4 bg-red-500/10 rounded-2xl border border-red-500/20">
+              <AlertTriangle className="w-8 h-8 text-red-500" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-black uppercase tracking-tighter text-white">Acceso Restringido</h2>
+              <p className="text-[10px] text-slate-500 font-mono uppercase tracking-widest">Error de Configuración de IA</p>
+            </div>
+          </div>
+
+          <div className="space-y-6 text-slate-400 text-sm leading-relaxed mb-10">
+            {isOriginError ? (
+              <>
+                <p className="text-red-400 font-bold">Tu API Key tiene restricciones de dominio (CORS).</p>
+                <p>Para solucionar esto, debes permitir el origen actual en tu consola de Google Cloud:</p>
+                
+                <div className="bg-black/40 p-4 rounded-xl border border-white/5 font-mono text-[10px] flex justify-between items-center group">
+                  <span className="text-blue-400">{currentOrigin}</span>
+                  <button 
+                    onClick={() => navigator.clipboard.writeText(currentOrigin)}
+                    className="text-[8px] bg-white/5 hover:bg-white/10 px-2 py-1 rounded border border-white/10 transition-all opacity-0 group-hover:opacity-100"
+                  >
+                    COPIAR
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  <p className="text-xs font-bold text-slate-300">Pasos para corregir:</p>
+                  <ol className="list-decimal list-inside space-y-2 text-xs">
+                    <li>Ve a <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" className="text-blue-400 underline">Google Cloud Console</a>.</li>
+                    <li>Busca tu API Key en la sección "Claves de API".</li>
+                    <li>En "Restricciones de sitios web", añade el dominio arriba o selecciona "Ninguna" (solo para pruebas).</li>
+                    <li>Guarda los cambios y espera 1-2 minutos.</li>
+                    <li>Si usas una llave en tus <b>Variables de Entorno (Secrets)</b>, asegúrate de que no tenga restricciones de dominio.</li>
+                  </ol>
+                </div>
+              </>
+            ) : (
+              <p>No se detectó una API Key válida para activar el núcleo de IA. Por favor, selecciona una llave o configúrala en tus variables de entorno.</p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <button 
+              onClick={handleSelectKey}
+              className="py-4 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-2xl font-black uppercase tracking-widest border border-red-500/20 transition-all"
+            >
+              Seleccionar Llave
+            </button>
+            <button 
+              onClick={() => window.location.reload()}
+              className="py-4 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-black uppercase tracking-widest border border-white/10 transition-all"
+            >
+              Reintentar
+            </button>
+          </div>
         </div>
       </div>
     );

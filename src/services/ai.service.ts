@@ -1,9 +1,9 @@
 import { GoogleGenAI } from "@google/genai";
 
 export const getAI = () => {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+  const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    console.warn("GEMINI_API_KEY not found. AI features may be limited.");
+    console.warn("API Key not found. AI features may be limited.");
     return null;
   }
   return new GoogleGenAI({ apiKey });
