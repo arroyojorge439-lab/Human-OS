@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Brain, 
@@ -30,7 +31,7 @@ import {
   Area,
   AreaChart
 } from 'recharts';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 
 // --- Types ---
@@ -187,7 +188,7 @@ const App: React.FC = () => {
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // --- Initialization ---
+  // --- Initialization --
   useEffect(() => {
     const savedEvolution = localStorage.getItem('human_evolution_v8');
     const savedSleep = localStorage.getItem('sleep_history_v8');
@@ -196,15 +197,20 @@ const App: React.FC = () => {
 
     const checkKey = async () => {
       try {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Smart Delay: Ensure AI Studio environment is ready
+        await new Promise(resolve => setTimeout(resolve, 800)); 
+
         if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
           const selected = await window.aistudio.hasSelectedApiKey();
           setHasKey(selected);
         } else {
-          setHasKey(!!process.env.GEMINI_API_KEY || !!process.env.API_KEY);
+           // Local Fallback: Check environment variables if not in AI Studio
+          const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY;
+          setHasKey(!!apiKey);
         }
       } catch (e) {
         setHasKey(false);
+        setKeyError("Error al verificar la API Key.");
       } finally {
         setIsCheckingKey(false);
       }
@@ -255,33 +261,52 @@ const App: React.FC = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
-  // --- AI Integration ---
-  const callGemini = async (prompt: string, role: string = "") => {
+  // --- AI Integration with Key Guardian --
+  const callGemini = async (endpoint: string, body: object) => {
     try {
-      const response = await fetch('/api/interpret/simple', {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, role }),
+        body: JSON.stringify(body),
       });
       
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'API Error');
+        const errMsg = errorData.error || 'API Error';
+        
+        // Key Guardian: Detect origin/permission errors
+        if (errMsg.toLowerCase().includes('origin') || errMsg.toLowerCase().includes('api key not valid')) {
+          setKeyError("Acceso denegado. Tu API Key tiene restricciones de dominio (CORS) o no es válida.");
+          setHasKey(false); // Revoke access locally
+        }
+        throw new Error(errMsg);
       }
       const data = await response.json();
-      return data.result || "Error en la respuesta.";
+      return data;
     } catch (error: any) {
-      console.error("Gemini Error:", error);
-      return error.message || "No pudimos procesar la respuesta en este momento.";
+      console.error("Gemini API Error:", error);
+       // Tactical Feedback for network or other errors
+       if (error.message.toLowerCase().includes('origin')) {
+        setKeyError("Acceso denegado. Tu API Key tiene restricciones de dominio (CORS).");
+        setHasKey(false);
+      }
+      // Re-throw to be handled by the calling function
+      throw error;
     }
   };
+
 
   // --- Actions ---
   const handleSelectKey = async () => {
     if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
       setKeyError(null);
       await window.aistudio.openSelectKey();
-      setHasKey(true);
+      // Re-check key status after user interaction
+      const selected = await window.aistudio.hasSelectedApiKey();
+      setHasKey(selected);
+      if(selected) {
+        setIsCheckingKey(false);
+      }
     }
   };
 
@@ -312,10 +337,13 @@ const App: React.FC = () => {
     setBioState(newState);
 
     addSystemLog(`Descanso registrado: ${sleepHours}h. Recalibrando...`);
-
-    const prompt = `El usuario durmió ${sleepHours} horas. Su energía actual es ${newState.energia}%. Dame una sugerencia suave de bienestar para su mañana basada en este descanso.`;
-    const advice = await callGemini(prompt, "Acompañante de bienestar.");
-    setChatMessages(prev => [...prev, { role: 'ai', content: `Sugerencia Matutina: ${advice}` }]);
+    try {
+      const prompt = `El usuario durmió ${sleepHours} horas. Su energía actual es ${newState.energia}%. Dame una sugerencia suave de bienestar para su mañana basada en este descanso.`;
+      const data = await callGemini('/api/interpret/simple', { prompt, role: "Acompañante de bienestar." });
+      setChatMessages(prev => [...prev, { role: 'ai', content: `Sugerencia Matutina: ${data.result}` }]);
+    } catch(error){
+      addSystemLog("No se pudo obtener la sugerencia matutina.")
+    }
   };
 
   const sendMessage = async () => {
@@ -334,25 +362,30 @@ const App: React.FC = () => {
     [EMOTIONAL_STATE: {"calma": 0.x, "energia": 0.x, "conexion": 0.x}]
     Usa valores entre 0 y 1 basados en el tono y contenido del mensaje del usuario.`;
     
-    const result = await callGemini(userMsg, sys);
+    try {
+      const data = await callGemini('/api/interpret/simple', { prompt: userMsg, role: sys });
+      let cleanResult = data.result;
 
-    const stateMatch = result.match(/\[EMOTIONAL_STATE: ({.*?})\]/);
-    let cleanResult = result;
-    if (stateMatch) {
-      try {
-        const newState = JSON.parse(stateMatch[1]);
-        setEmotionalState(prev => ({ ...prev, ...newState }));
-        cleanResult = result.replace(/\[EMOTIONAL_STATE: {.*?}\]/, '').trim();
-      } catch (e) {
-        console.error("Error parsing inferred state:", e);
+      const stateMatch = cleanResult.match(/\[EMOTIONAL_STATE: ({.*?})\]/);
+      if (stateMatch) {
+        try {
+          const newState = JSON.parse(stateMatch[1]);
+          setEmotionalState(prev => ({ ...prev, ...newState }));
+          cleanResult = cleanResult.replace(/\[EMOTIONAL_STATE: {.*?}\]/, '').trim();
+        } catch (e) {
+          console.error("Error parsing inferred state:", e);
+        }
       }
+
+      setChatMessages(prev => [...prev, { role: 'ai', content: cleanResult }]);
+
+      const newHistory = [...evolutionHistory, { coherencia: bioState.coherencia, date: Date.now() }];
+      setEvolutionHistory(newHistory);
+      localStorage.setItem('human_evolution_v8', JSON.stringify(newHistory));
+
+    } catch (error) {
+       addSystemLog("El núcleo de inteligencia no está respondiendo. Verifica el estado de la conexión.");
     }
-
-    setChatMessages(prev => [...prev, { role: 'ai', content: cleanResult }]);
-
-    const newHistory = [...evolutionHistory, { coherencia: bioState.coherencia, date: Date.now() }];
-    setEvolutionHistory(newHistory);
-    localStorage.setItem('human_evolution_v8', JSON.stringify(newHistory));
   };
 
   const getBioProtocols = async () => {
@@ -361,14 +394,15 @@ const App: React.FC = () => {
     addSystemLog("Buscando sugerencias de bienestar...");
     const lastSleep = sleepHistory.length ? sleepHistory[sleepHistory.length - 1].hours : '7';
     const prompt = `Estado: Sueño ${lastSleep}h, Tensión ${bioState.estres}%, Energía ${bioState.energia}%. Dame 3 sugerencias de bienestar rápidas. Responde SOLO con un JSON válido: [{"title": "...", "desc": "..."}]`;
-    const res = await callGemini(prompt, "Acompañante de bienestar.");
-
+    
     try {
-      const jsonStr = res.replace(/```json|```/g, '').trim();
-      const data = JSON.parse(jsonStr);
-      setProtocols(data);
+      const data = await callGemini('/api/interpret/simple', { prompt, role: "Acompañante de bienestar." });
+      const jsonStr = data.result.replace(/```json|```/g, '').trim();
+      const parsedData = JSON.parse(jsonStr);
+      setProtocols(parsedData);
     } catch (e) {
       setProtocols([{ title: "Error", desc: "No se pudieron sincronizar los protocolos." }]);
+      addSystemLog("Error al sincronizar protocolos de bienestar.");
     } finally {
       setIsLoadingProtocols(false);
     }
@@ -377,11 +411,16 @@ const App: React.FC = () => {
   const reviewSystemState = async () => {
     setIsScanning(true);
     addSystemLog("Reflexionando sobre el estado del sistema...");
-    const res = await callGemini(`Analiza suavemente: Energía:${bioState.energia}, Tensión:${bioState.estres}. Describe cómo parece estar el sistema en una frase corta y humana, sin diagnosticar.`, "Acompañante de introspección.");
-    setTimeout(() => {
-      setIsScanning(false);
-      addSystemLog("Reflexión: " + res);
-    }, 2000);
+    try {
+      const data = await callGemini('/api/interpret/simple', { prompt: `Analiza suavemente: Energía:${bioState.energia}, Tensión:${bioState.estres}. Describe cómo parece estar el sistema en una frase corta y humana, sin diagnosticar.`, role: "Acompañante de introspección." });
+      setTimeout(() => {
+        setIsScanning(false);
+        addSystemLog("Reflexión: " + data.result);
+      }, 2000);
+    } catch(error) {
+        setIsScanning(false);
+        addSystemLog("La auto-reflexión no está disponible en este momento.");
+    }
   };
 
   const addSystemLog = (msg: string) => {
@@ -522,14 +561,7 @@ const App: React.FC = () => {
       
       const prompt = `High-quality digital art representing 'Evolutionary Intelligence' influenced by the current mood: ${mood}. Palette: deep blue, neon purple, indigo, vibrant pink, cyber green. Themes: progress, discovery, neural networks, biological growth, futuristic, cinematic lighting, 4k, masterpiece, intricate details. The art should feel like a biological-digital hybrid evolving in real-time.`;
       
-      const response = await fetch('/api/interpret/image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
-      });
-      
-      if (!response.ok) throw new Error('API Error');
-      const data = await response.json();
+      const data = await callGemini('/api/interpret/image', { prompt });
       
       if (data.result) {
         setEvolutionaryArt(data.result);
@@ -538,7 +570,6 @@ const App: React.FC = () => {
         addSystemLog("SÍNTESIS VISUAL NO DISPONIBLE.");
       }
     } catch (error: any) {
-      console.error("Art Generation Error:", error);
       addSystemLog("ERROR EN SÍNTESIS DE ARTE.");
     } finally {
       setIsGeneratingArt(false);
@@ -574,17 +605,7 @@ const App: React.FC = () => {
 
   const generateLandscapeInterpretation = async (description: string) => {
     try {
-      const response = await fetch('/api/interpret', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: description, depth: depthLevel }),
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'API Error');
-      }
-      const data = await response.json();
+      const data = await callGemini('/api/interpret', { input: description, depth: depthLevel });
       
       if (!data.interpretation) {
         setLandscapeInterpretation("No pudimos interpretar esto ahora, puedes intentar de nuevo.");
@@ -602,26 +623,25 @@ const App: React.FC = () => {
         setBlindSpot('');
       }
 
+      const state = {
+        energia: emotionalState.energia,
+        calma: emotionalState.calma,
+        estres: bioState.estres / 100
+      };
+      
+      const adjustment: NeuralSync = {};
+      if (state.estres > 0.7) adjustment.estres = -20;
+      if (state.energia < 0.4) adjustment.energia = 20;
+      if (state.calma < 0.4) adjustment.oxitocina = 15;
+      if (state.energia > 0.8 && state.estres < 0.3) adjustment.enfoque = 10;
+      if (state.calma > 0.8) adjustment.coherencia = 10;
+      
+      setNeuralSync(Object.keys(adjustment).length > 0 ? adjustment : null);
+
     } catch (error) {
-      console.error("Interpretation Error:", error);
       setLandscapeInterpretation("No pudimos interpretar esto ahora, puedes intentar de nuevo.");
       setLandscapeSymbols([]);
     }
-
-    const state = {
-      energia: emotionalState.energia,
-      calma: emotionalState.calma,
-      estres: bioState.estres / 100
-    };
-    
-    const adjustment: NeuralSync = {};
-    if (state.estres > 0.7) adjustment.estres = -20;
-    if (state.energia < 0.4) adjustment.energia = 20;
-    if (state.calma < 0.4) adjustment.oxitocina = 15;
-    if (state.energia > 0.8 && state.estres < 0.3) adjustment.enfoque = 10;
-    if (state.calma > 0.8) adjustment.coherencia = 10;
-    
-    setNeuralSync(Object.keys(adjustment).length > 0 ? adjustment : null);
   };
 
   const handleGenerateLandscape = async () => {
@@ -651,30 +671,16 @@ const App: React.FC = () => {
       
       if (!description) {
         const prompt = generateLandscapePrompt();
-        description = await callGemini(prompt, "Arquitecto de Paisajes Emocionales. Crea descripciones poéticas, suaves y evocadoras.");
+        const data = await callGemini('/api/interpret/simple', { prompt, role: "Arquitecto de Paisajes Emocionales. Crea descripciones poéticas, suaves y evocadoras." });
+        description = data.result;
         setLandscapeDescription(description);
-      }
-      
-      if (description.includes("ERROR DE ORIGEN")) {
-        setIsGeneratingLandscape(false);
-        return;
       }
       
       await generateLandscapeInterpretation(description);
 
       try {
         const prompt = `Digital art, cinematic landscape, high detail, masterpiece, soft and ethereal atmosphere: ${description}`;
-        const imageResponse = await fetch('/api/interpret/image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt }),
-        });
-        
-        if (!imageResponse.ok) {
-          const errorData = await imageResponse.json();
-          throw new Error(errorData.error || 'API Error');
-        }
-        const imageData = await imageResponse.json();
+        const imageData = await callGemini('/api/interpret/image', { prompt });
         
         if (imageData.result) {
           setLandscapeImage(imageData.result);
@@ -682,30 +688,14 @@ const App: React.FC = () => {
           addSystemLog("SÍNTESIS VISUAL NO DISPONIBLE.");
         }
       } catch (imgError: any) {
-        console.error("Image Generation Error:", imgError);
-        const imgMsg = imgError.message || imgError.toString() || "";
-        if (imgMsg.toLowerCase().includes("origin not allowed")) {
-          setKeyError("Tu API Key tiene restricciones de dominio (CORS).");
-          setHasKey(false);
-          addSystemLog("ERROR DE ORIGEN EN IMAGEN: Restricciones detectadas.");
-        } else {
-          addSystemLog("SÍNTESIS VISUAL NO DISPONIBLE.");
-        }
+        addSystemLog("SÍNTESIS VISUAL NO DISPONIBLE.");
       }
 
       if (!isDynamicMode) {
         addSystemLog("Interpretación completada. El paisaje ha sido proyectado.");
       }
     } catch (error: any) {
-      console.error("Landscape Generation Error:", error);
-      const errorMsg = error.message || error.toString() || "";
-      if (errorMsg.toLowerCase().includes("origin not allowed")) {
-        setKeyError("Tu API Key tiene restricciones de dominio (CORS).");
-        setHasKey(false);
-        addSystemLog("ERROR DE ORIGEN: Restricciones de API Key detectadas.");
-      } else {
-        addSystemLog("No pudimos interpretar esto ahora, puedes intentar de nuevo.");
-      }
+      addSystemLog("No pudimos generar el paisaje ahora, puedes intentar de nuevo.");
     } finally {
       setIsGeneratingLandscape(false);
     }
@@ -737,22 +727,10 @@ const App: React.FC = () => {
     setDeepenInterpretation('');
 
     try {
-      const response = await fetch('/api/interpret/deepen', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol: symbol, context: landscapeDescription }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'API Error');
-      }
-
-      const data = await response.json();
+      const data = await callGemini('/api/interpret/deepen', { symbol: symbol, context: landscapeDescription });
       setDeepenInterpretation(data.interpretation);
 
     } catch (error: any) {
-      console.error("Deepen Interpretation Error:", error);
       setDeepenInterpretation("No hemos podido profundizar en este símbolo en este momento. Por favor, intenta de nuevo más tarde.");
     } finally {
       setIsDeepening(false);
@@ -808,7 +786,7 @@ const App: React.FC = () => {
     </div>
   );
 
-  // --- Main Render ---
+  // --- Main Render --
   if (isCheckingKey) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#050810]">
@@ -933,29 +911,31 @@ const App: React.FC = () => {
                   <span className="text-[7px] text-slate-600 uppercase font-mono">{landscapeDescription.length}/800</span>
                 </div>
               </div>
-              {[
-                { id: 'calma', label: 'Calma', color: 'accent-blue-400', icon: <Moon className="w-3 h-3 text-blue-400" /> },
-                { id: 'energia', label: 'Energía', color: 'accent-yellow-400', icon: <Zap className="w-3 h-3 text-yellow-400" /> },
-                { id: 'conexion', label: 'Conexión', color: 'accent-pink-400', icon: <Heart className="w-3 h-3 text-pink-400" /> }
-              ].map((emotion) => (
-                <div key={emotion.id}>
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="text-[9px] text-slate-500 uppercase font-bold flex items-center gap-1">
-                      {emotion.icon} {emotion.label}
-                    </label>
-                    <span className="text-[10px] font-mono text-white">{(emotionalState[emotion.id as keyof EmotionalState] * 100).toFixed(0)}%</span>
+              {
+                [
+                  { id: 'calma', label: 'Calma', color: 'accent-blue-400', icon: <Moon className="w-3 h-3 text-blue-400" /> },
+                  { id: 'energia', label: 'Energía', color: 'accent-yellow-400', icon: <Zap className="w-3 h-3 text-yellow-400" /> },
+                  { id: 'conexion', label: 'Conexión', color: 'accent-pink-400', icon: <Heart className="w-3 h-3 text-pink-400" /> }
+                ].map((emotion) => (
+                  <div key={emotion.id}>
+                    <div className="flex justify-between items-center mb-2">
+                      <label className="text-[9px] text-slate-500 uppercase font-bold flex items-center gap-1">
+                        {emotion.icon} {emotion.label}
+                      </label>
+                      <span className="text-[10px] font-mono text-white">{(emotionalState[emotion.id as keyof EmotionalState] * 100).toFixed(0)}%</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="0" 
+                      max="1" 
+                      step="0.01" 
+                      value={emotionalState[emotion.id as keyof EmotionalState]} 
+                      onChange={(e) => setEmotionalState(prev => ({ ...prev, [emotion.id]: parseFloat(e.target.value) }))}
+                      className={`w-full ${emotion.color} bg-white/5 rounded-lg appearance-none h-1`}
+                    />
                   </div>
-                  <input 
-                    type="range" 
-                    min="0" 
-                    max="1" 
-                    step="0.01" 
-                    value={emotionalState[emotion.id as keyof EmotionalState]} 
-                    onChange={(e) => setEmotionalState(prev => ({ ...prev, [emotion.id]: parseFloat(e.target.value) }))}
-                    className={`w-full ${emotion.color} bg-white/5 rounded-lg appearance-none h-1`}
-                  />
-                </div>
-              ))}
+                ))
+              }
               <button 
                 onClick={handleGenerateLandscape}
                 className="w-full mt-4 py-3 glass-button glass-button-pink rounded-xl text-[9px] font-black uppercase tracking-widest text-pink-400"
@@ -967,7 +947,11 @@ const App: React.FC = () => {
 
           {/* Interpretation/Result Card */}
           {landscapeDescription && (
-            <div className="glass-card p-6 border border-pink-500/20 animate-in fade-in slide-in-from-bottom-4 duration-1000">
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="glass-card p-6 border border-pink-500/20"
+            >
               <h3 className="text-[10px] font-black uppercase tracking-widest mb-4 text-pink-400 flex items-center gap-2">
                 <Sparkles className="w-3 h-3" /> Proyección de Paisaje
               </h3>
@@ -982,17 +966,23 @@ const App: React.FC = () => {
                     <span className="text-[8px] text-pink-400 font-black uppercase tracking-[0.3em]">Renderizando...</span>
                   </div>
                 ) : landscapeImage ? (
-                  <img 
+                  <motion.img 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
                     src={landscapeImage} 
                     alt="Paisaje Emocional" 
-                    className="w-full h-full object-cover animate-in fade-in duration-1000"
+                    className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
                   />
                 ) : null}
               </div>
 
               {landscapeInterpretation && (
-                <div className="mt-6 pt-6 border-t border-white/5 animate-in fade-in duration-1000">
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="mt-6 pt-6 border-t border-white/5"
+                >
                   <div className="flex justify-between items-center mb-4">
                     <h4 className="text-[9px] font-black uppercase tracking-widest text-indigo-400 flex items-center gap-2">
                       <Brain className="w-3 h-3" /> Lectura Interna
@@ -1024,7 +1014,11 @@ const App: React.FC = () => {
                    )}
 
                   {neuralSync && (
-                    <div className="mt-6 p-4 bg-purple-500/10 border border-purple-500/20 rounded-2xl animate-in slide-in-from-top-2 duration-500">
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="mt-6 p-4 bg-purple-500/10 border border-purple-500/20 rounded-2xl"
+                    >
                       <div className="flex justify-between items-center mb-3">
                         <h5 className="text-[9px] font-black uppercase tracking-widest text-purple-300 flex items-center gap-2">
                           <Activity className="w-3 h-3" /> Explorar este ajuste
@@ -1051,26 +1045,30 @@ const App: React.FC = () => {
                         {isSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Dna className="w-3 h-3" />}
                         {isSyncing ? 'Sincronizando...' : 'Probar este cambio'}
                       </button>
-                    </div>
+                    </motion.div>
                   )}
 
                   {blindSpot && (
-                    <div className="mt-4 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl animate-in zoom-in duration-500">
+                    <motion.div 
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="mt-4 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl"
+                    >
                       <h5 className="text-[8px] font-black uppercase tracking-widest mb-1 text-indigo-300">Posible punto ciego:</h5>
                       <div className="text-[10px] text-indigo-200 italic markdown-body">
                         <ReactMarkdown>
                           {blindSpot}
                         </ReactMarkdown>
                       </div>
-                    </div>
+                    </motion.div>
                   )}
 
                   <div className="mt-4 pt-4 border-t border-white/5 text-[8px] text-slate-500 italic">
                     Esto es una interpretación, no una verdad absoluta. Puedes tomar lo que resuene y dejar lo demás.
                   </div>
-                </div>
+                </motion.div>
               )}
-            </div>
+            </motion.div>
           )}
           
         </div>
@@ -1182,32 +1180,44 @@ const App: React.FC = () => {
       </div>
 
       {/* Protocols Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="glass-card max-w-md w-full p-8 border-green-500/30">
-            <div className="flex justify-between items-center mb-6">
-              <h4 className="text-lg font-bold text-green-400 tracking-tighter">Protocolos de Optimización</h4>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-500 hover:text-white">
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-            <div className="space-y-4">
-              {isLoadingProtocols ? (
-                <div className="flex justify-center p-12">
-                  <Dna className="w-12 h-12 text-green-400 animate-bounce" />
-                </div>
-              ) : (
-                protocols.map((p, i) => (
-                  <div key={i} className="p-4 bg-white/5 rounded-2xl border border-white/5 hover:border-green-500/30 transition-all">
-                    <p className="font-bold text-green-400 text-[10px] uppercase mb-1">{p.title}</p>
-                    <p className="text-[11px] text-slate-400 italic">{p.desc}</p>
+      <AnimatePresence>
+        {isModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="glass-card max-w-md w-full p-8 border-green-500/30"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h4 className="text-lg font-bold text-green-400 tracking-tighter">Protocolos de Optimización</h4>
+                <button onClick={() => setIsModalOpen(false)} className="text-slate-500 hover:text-white">
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              <div className="space-y-4">
+                {isLoadingProtocols ? (
+                  <div className="flex justify-center p-12">
+                    <Dna className="w-12 h-12 text-green-400 animate-bounce" />
                   </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+                ) : (
+                  protocols.map((p, i) => (
+                    <div key={i} className="p-4 bg-white/5 rounded-2xl border border-white/5 hover:border-green-500/30 transition-all">
+                      <p className="font-bold text-green-400 text-[10px] uppercase mb-1">{p.title}</p>
+                      <p className="text-[11px] text-slate-400 italic">{p.desc}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Deepen Symbol Modal */}
       <AnimatePresence>
