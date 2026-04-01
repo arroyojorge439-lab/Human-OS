@@ -153,6 +153,7 @@ const App: React.FC = () => {
   const [landscapeDescription, setLandscapeDescription] = useState<string>('');
   const [landscapeImage, setLandscapeImage] = useState<string>('');
   const [landscapeInterpretation, setLandscapeInterpretation] = useState<string>('');
+  const [landscapeSymbols, setLandscapeSymbols] = useState<string[]>([]);
   const [isGeneratingLandscape, setIsGeneratingLandscape] = useState(false);
   const [isDynamicMode, setIsDynamicMode] = useState(false);
   const [depthLevel, setDepthLevel] = useState<'suave' | 'medio' | 'profundo'>('medio');
@@ -587,7 +588,7 @@ const App: React.FC = () => {
       const response = await fetch('/api/interpret', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: description }),
+        body: JSON.stringify({ input: description, depth: depthLevel }),
       });
       
       if (!response.ok) {
@@ -595,25 +596,28 @@ const App: React.FC = () => {
         throw new Error(errorData.error || 'API Error');
       }
       const data = await response.json();
-      const interpretation = data.result;
       
-      if (!interpretation) {
+      if (!data.interpretation) {
         setLandscapeInterpretation("No pudimos interpretar esto ahora, puedes intentar de nuevo.");
+        setLandscapeSymbols([]);
         return;
       }
 
-      // Intentar extraer el punto ciego si existe para mantener la UI
-      const blindSpotMatch = interpretation.match(/### Posible punto ciego\n\n([\s\S]*?)(?=\n\n###|$)/i);
+      setLandscapeInterpretation(data.interpretation);
+      setLandscapeSymbols(data.symbols || []);
+
+      // Legacy blind spot extraction, can be removed if the new structure is reliable
+      const blindSpotMatch = data.interpretation.match(/### Posible punto ciego\n\n([\s\S]*?)(?=\n\n###|$)/i);
       if (blindSpotMatch) {
         setBlindSpot(blindSpotMatch[1].trim());
-        setLandscapeInterpretation(interpretation.replace(/### Posible punto ciego\n\n[\s\S]*?(?=\n\n###|$)/i, '').trim());
       } else {
-        setLandscapeInterpretation(interpretation);
         setBlindSpot('');
       }
+
     } catch (error) {
       console.error("Interpretation Error:", error);
       setLandscapeInterpretation("No pudimos interpretar esto ahora, puedes intentar de nuevo.");
+      setLandscapeSymbols([]);
     }
 
     // Loop Inverso: Sugerencia de Sincronización Neuronal (Modelo Matemático Interno)
@@ -653,6 +657,7 @@ const App: React.FC = () => {
     setIsGeneratingLandscape(true);
     setLandscapeImage('');
     setLandscapeInterpretation('');
+    setLandscapeSymbols([]);
     setBlindSpot('');
     
     try {
@@ -740,6 +745,14 @@ const App: React.FC = () => {
       setIsSyncing(false);
       addSystemLog("Ajuste completado. El sistema se siente más equilibrado.");
     }, 1500);
+  };
+  
+  const handleSymbolClick = (symbol: string) => {
+    console.log(`Symbol clicked: ${symbol}`);
+    // Future implementation:
+    // 1. Add a loading state for the symbol
+    // 2. Call a new API endpoint to get a deeper interpretation of the symbol
+    // 3. Display the new interpretation in a modal or an expandable section
   };
 
   // --- Render Helpers ---
@@ -1297,6 +1310,24 @@ const App: React.FC = () => {
                     </div>
                   </div>
                   
+                  {landscapeSymbols.length > 0 && (
+                    <div className="mt-6 pt-4 border-t border-white/5">
+                        <h5 className="text-[9px] font-black uppercase tracking-widest text-pink-400 mb-3">Símbolos Clave</h5>
+                        <div className="flex flex-wrap gap-2">
+                            {landscapeSymbols.map((symbol, index) => (
+                                <button 
+                                    key={index} 
+                                    onClick={() => handleSymbolClick(symbol)}
+                                    className="px-3 py-1.5 bg-pink-500/10 hover:bg-pink-500/20 text-pink-300 text-[10px] font-semibold rounded-full border border-pink-500/20 transition-all flex items-center gap-2"
+                                >
+                                    <Sparkles className="w-3 h-3 opacity-50" />
+                                    {symbol}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                   )}
+
                   {neuralSync && (
                     <div className="mt-6 p-4 bg-purple-500/10 border border-purple-500/20 rounded-2xl animate-in slide-in-from-top-2 duration-500">
                       <div className="flex justify-between items-center mb-3">

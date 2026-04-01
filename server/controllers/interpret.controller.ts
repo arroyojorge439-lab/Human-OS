@@ -1,63 +1,54 @@
 import { Request, Response } from "express";
-import {
-  getInterpretation,
-  getSimpleResponse,
-  analyzeImage,
-} from "../services/ai.service.js";
+import { aiService, InterpretationResponse } from "../services/ai.service.js";
+
+// Helper to handle async controller logic and errors
+const asyncHandler = (fn: (req: Request, res: Response) => Promise<void>) => 
+    (req: Request, res: Response) => {
+        Promise.resolve(fn(req, res)).catch((error) => {
+            console.error(`Error in ${req.path}:`, error);
+            res.status(500).json({ error: error.message || "Internal Server Error" });
+        });
+    };
+
 
 // Controller for dream interpretation
-export const interpret = async (req: Request, res: Response) => {
-  try {
+export const interpret = asyncHandler(async (req: Request, res: Response) => {
     const { input, depth = 'medio' } = req.body;
+
     if (!input) {
-      return res.status(400).json({ error: "Input is required" });
+        res.status(400).json({ error: "Input is required" });
+        return;
     }
 
-    // Validate depth
+    // Type guard for depth
     const validDepths = ['suave', 'medio', 'profundo'];
     if (!validDepths.includes(depth)) {
-        return res.status(400).json({ error: "Invalid depth level provided." });
+        res.status(400).json({ error: "Invalid depth level provided." });
+        return;
     }
 
-    const result = await getInterpretation(input, depth);
-    res.json({ result });
-  } catch (error: any) {
-    console.error("Interpret Controller Error:", error);
-    res.status(500).json({
-      error: error.message || "Failed to process interpretation",
-    });
-  }
-};
+    const result: InterpretationResponse = await aiService.getInterpretation(input, depth as 'suave' | 'medio' | 'profundo');
+    res.json(result);
+});
 
 // Controller for simple, role-based AI responses
-export const simpleCall = async (req: Request, res: Response) => {
-  try {
+export const simpleCall = asyncHandler(async (req: Request, res: Response) => {
     const { prompt, role } = req.body;
     if (!prompt) {
-      return res.status(400).json({ error: "Prompt is required" });
+        res.status(400).json({ error: "Prompt is required" });
+        return;
     }
-    const result = await getSimpleResponse(prompt, role);
+    const result = await aiService.getSimpleResponse(prompt, role);
     res.json({ result });
-  } catch (error: any) {
-    console.error("Simple Call Controller Error:", error);
-    res.status(500).json({ error: error.message || "Failed to process simple call" });
-  }
-};
+});
 
 // Controller for using the vision model
-export const visionController = async (req: Request, res: Response) => {
-  try {
+export const visionController = asyncHandler(async (req: Request, res: Response) => {
     const { prompt } = req.body;
     if (!prompt) {
-      return res.status(400).json({ error: "Prompt is required" });
+        res.status(400).json({ error: "Prompt is required" });
+        return;
     }
-    // Note: This function uses a vision model, it does not generate images.
-    const result = await analyzeImage(prompt);
+    const result = await aiService.analyzeImage(prompt);
     res.json({ result });
-  } catch (error: any) {
-    console.error("Vision Controller Error:", error);
-    res
-      .status(500)
-      .json({ error: error.message || "Failed to process vision request" });
-  }
-};
+});
