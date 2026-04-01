@@ -31,6 +31,18 @@ export const interpret = asyncHandler(async (req: Request, res: Response) => {
     res.json(result);
 });
 
+export const deepen = asyncHandler(async (req: Request, res: Response) => {
+    const { symbol, context } = req.body;
+
+    if (!symbol || !context) {
+        res.status(400).json({ error: "Symbol and context are required" });
+        return;
+    }
+
+    const result = await aiService.getSymbolInterpretation(symbol, context);
+    res.json({ interpretation: result });
+});
+
 // Controller for simple, role-based AI responses
 export const simpleCall = asyncHandler(async (req: Request, res: Response) => {
     const { prompt, role } = req.body;

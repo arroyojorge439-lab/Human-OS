@@ -11,11 +11,16 @@ export interface InterpretationResponse {
     symbols: string[];
 }
 
+interface PromptConfigs {
+    interpret: any;
+    deepen: any;
+}
+
 // --- AI Service Class ---
 
 class AIService {
     private genAI: GoogleGenerativeAI;
-    private promptConfig: any;
+    private promptConfigs: Partial<PromptConfigs> = {};
     private textModel: GenerativeModel;
     private visionModel: GenerativeModel;
 
@@ -26,21 +31,31 @@ class AIService {
         this.genAI = new GoogleGenerativeAI(apiKey);
         this.textModel = this.genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         this.visionModel = this.genAI.getGenerativeModel({ model: "gemini-pro-vision" });
-        this.loadPromptConfig();
+        this.loadPromptConfigs();
     }
 
-    private loadPromptConfig() {
-        try {
-            const promptPath = path.join(process.cwd(), "shared/prompts/interpret.prompt.json");
-            this.promptConfig = JSON.parse(fs.readFileSync(promptPath, "utf-8"));
-        } catch (error) {
-            console.error("Failed to load or parse prompt configuration:", error);
-            throw new Error("Could not load AI prompt configuration.");
+    private loadPromptConfigs() {
+        const loadConfig = (fileName: string) => {
+            try {
+                const p = path.join(process.cwd(), "shared/prompts", fileName);
+                return JSON.parse(fs.readFileSync(p, "utf-8"));
+            } catch (error) {
+                console.error(`Failed to load or parse prompt configuration: ${fileName}`, error);
+                return null;
+            }
+        };
+        
+        this.promptConfigs.interpret = loadConfig("interpret.prompt.json");
+        this.promptConfigs.deepen = loadConfig("deepen.prompt.json");
+
+        if (!this.promptConfigs.interpret || !this.promptConfigs.deepen) {
+             throw new Error("Could not load all required AI prompt configurations.");
         }
     }
 
     private buildSystemPrompt(depthLevel: DepthLevel): string {
-        const { persona, base_rules, safety_guardrails, response_structure, depth_levels, special_functions, edge_cases } = this.promptConfig;
+        const config = this.promptConfigs.interpret;
+        const { persona, base_rules, safety_guardrails, response_structure, depth_levels, special_functions, edge_cases } = config;
         
         const level = depth_levels[depthLevel] || depth_levels.medio;
 
@@ -62,6 +77,20 @@ class AIService {
         
         // Edge cases
         sections.push("\n--- CASOS BORDE ---\n" + edge_cases.ambiguous_input.instruction + "\n" + edge_cases.high_conflict_in_low_depth.instruction);
+
+        return sections.join("\n\n");
+    }
+
+    private buildDeepenSystemPrompt(): string {
+        const config = this.promptConfigs.deepen;
+        if (!config) throw new Error("Deepen prompt config not loaded.");
+
+        const sections = [
+            config.persona,
+            "\n--- REGLAS BASE ---\n" + config.base_rules.join("\n"),
+            "\n--- GUARDIANES DE SEGURIDAD ---\n" + config.safety_guardrails.join("\n"),
+            "\n--- ESTRUCTURA DE RESPUESTA ---\n" + config.response_structure.format,
+        ];
 
         return sections.join("\n\n");
     }
@@ -108,6 +137,14 @@ class AIService {
                 symbols: []
             };
         }
+    }
+
+    public async getSymbolInterpretation(symbol: string, landscapeContext: string): Promise<string> {
+        const systemPrompt = this.buildDeepenSystemPrompt();
+        const userPrompt = `Paisaje Original: \"${landscapeContext}\"\n\nSímbolo a Profundizar: \"${symbol}\"`;
+        
+        const interpretation = await this.generateText(systemPrompt, userPrompt);
+        return interpretation;
     }
 
     public async getSimpleResponse(prompt: string, role?: string): Promise<string> {
