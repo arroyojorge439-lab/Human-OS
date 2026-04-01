@@ -3,7 +3,6 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import cors from "cors";
-import interpretRoutes from "./server/routes/interpret.routes.ts";
 import paymentRoutes from "./server/routes/payment.routes.ts";
 import { config } from "./server/config/env.ts";
 
@@ -18,7 +17,6 @@ async function startServer() {
   app.use(express.json());
 
   // API routes FIRST
-  app.use("/api/interpret", interpretRoutes);
   app.use("/api/payment", paymentRoutes);
 
   app.get("/api/health", (req, res) => {
