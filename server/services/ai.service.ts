@@ -1,169 +1,49 @@
-import { GoogleGenerativeAI, GenerativeModel } from "@google/generative-ai";
-import { config } from "../config/env.js";
+import { GoogleGenAI } from "@google/genai";
 import fs from "fs";
 import path from "path";
+import { config } from "../config/env.ts";
 
-// --- Type Definitions ---
-type DepthLevel = 'suave' | 'medio' | 'profundo';
+const ai = new GoogleGenAI({ apiKey: config.GEMINI_API_KEY! });
 
-export interface InterpretationResponse {
-    interpretation: string;
-    symbols: string[];
-}
+const promptPath = path.join(process.cwd(), "shared/prompts/interpret.prompt.txt");
+const systemPrompt = fs.readFileSync(promptPath, "utf-8");
 
-interface PromptConfigs {
-    interpret: any;
-    deepen: any;
-}
+export const getInterpretation = async (input: string) => {
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: input,
+    config: {
+      systemInstruction: systemPrompt,
+    },
+  });
 
-// --- AI Service Class ---
+  return response.text;
+};
 
-class AIService {
-    private genAI: GoogleGenerativeAI;
-    private promptConfigs: Partial<PromptConfigs> = {};
-    private textModel: GenerativeModel;
-    private visionModel: GenerativeModel;
+export const getSimpleResponse = async (prompt: string, role: string) => {
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: prompt,
+    config: {
+      systemInstruction: role,
+    },
+  });
 
-    constructor(apiKey: string) {
-        if (!apiKey) {
-            throw new Error("GEMINI_API_KEY is not defined.");
-        }
-        this.genAI = new GoogleGenerativeAI(apiKey);
-        this.textModel = this.genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        this.visionModel = this.genAI.getGenerativeModel({ model: "gemini-pro-vision" });
-        this.loadPromptConfigs();
+  return response.text;
+};
+
+export const generateImage = async (prompt: string) => {
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash-image',
+    contents: {
+      parts: [{ text: prompt }],
+    },
+  });
+
+  for (const part of response.candidates[0].content.parts) {
+    if (part.inlineData) {
+      return `data:image/png;base64,${part.inlineData.data}`;
     }
-
-    private loadPromptConfigs() {
-        const loadConfig = (fileName: string) => {
-            try {
-                const p = path.join(process.cwd(), "shared/prompts", fileName);
-                return JSON.parse(fs.readFileSync(p, "utf-8"));
-            } catch (error) {
-                console.error(`Failed to load or parse prompt configuration: ${fileName}`, error);
-                return null;
-            }
-        };
-        
-        this.promptConfigs.interpret = loadConfig("interpret.prompt.json");
-        this.promptConfigs.deepen = loadConfig("deepen.prompt.json");
-
-        if (!this.promptConfigs.interpret || !this.promptConfigs.deepen) {
-             throw new Error("Could not load all required AI prompt configurations.");
-        }
-    }
-
-    private buildSystemPrompt(depthLevel: DepthLevel): string {
-        const config = this.promptConfigs.interpret;
-        const { persona, base_rules, safety_guardrails, response_structure, depth_levels, special_functions, edge_cases } = config;
-        
-        const level = depth_levels[depthLevel] || depth_levels.medio;
-
-        const sections = [
-            persona,
-            "\n--- REGLAS BASE ---\n" + base_rules.join("\n"),
-            "\n--- GUARDIANES DE SEGURIDAD ---\n" + safety_guardrails.join("\n"),
-            "\n--- ESTRUCTURA DE RESPUESTA OBLIGATORIA ---\n" + response_structure.join("\n"),
-            `\n--- NIVEL DE PROFUNDIDAD: ${depthLevel.toUpperCase()} ---\n` + level.rules.join("\n"),
-        ];
-
-        // Special functions
-        const { blind_spot_detection, integration_step, reflective_question } = special_functions;
-        if (blind_spot_detection.enabled_levels.includes(depthLevel)) {
-            sections.push(`\n--- FUNCIÓN ADICIONAL: ${blind_spot_detection.section_title} ---\n` + blind_spot_detection.rules.join("\n") + "\nEjemplos de frases: " + blind_spot_detection.examples.join(", "));
-        }
-        sections.push(`\n--- FUNCIÓN ADICIONAL: ${integration_step.section_title} ---\n` + integration_step.rules.join("\n") + `\nAdaptación al tono de ${depthLevel}: ${integration_step.level_specific_tone[depthLevel]}` + "\nEjemplos: " + integration_step.examples.join(", "));
-        sections.push(`\n--- FUNCIÓN ADICIONAL: ${reflective_question.section_title} ---\n` + reflective_question.rules.join("\n") + `\nEjemplo para ${depthLevel}: ${reflective_question.level_specific_examples[depthLevel]}`);
-        
-        // Edge cases
-        sections.push("\n--- CASOS BORDE ---\n" + edge_cases.ambiguous_input.instruction + "\n" + edge_cases.high_conflict_in_low_depth.instruction);
-
-        return sections.join("\n\n");
-    }
-
-    private buildDeepenSystemPrompt(): string {
-        const config = this.promptConfigs.deepen;
-        if (!config) throw new Error("Deepen prompt config not loaded.");
-
-        const sections = [
-            config.persona,
-            "\n--- REGLAS BASE ---\n" + config.base_rules.join("\n"),
-            "\n--- GUARDIANES DE SEGURIDAD ---\n" + config.safety_guardrails.join("\n"),
-            "\n--- ESTRUCTURA DE RESPUESTA ---\n" + config.response_structure.format,
-        ];
-
-        return sections.join("\n\n");
-    }
-
-    private cleanJsonString(text: string): string {
-        const match = text.match(/```json\n([\s\S]*?)\n```/);
-        if (match && match[1]) {
-            return match[1];
-        }
-        return text.trim();
-    }
-    
-    private async generateText(systemPrompt: string, userPrompt: string): Promise<string> {
-        try {
-            const result = await this.textModel.generateContent([
-                { role: "system", parts: [{ text: systemPrompt }] },
-                { role: "user", parts: [{ text: userPrompt }] },
-            ]);
-            return result.response.text();
-        } catch (error) {
-            console.error("Error during text generation:", error);
-            throw new Error("Failed to generate text from AI model.");
-        }
-    }
-
-    public async getInterpretation(input: string, depth: DepthLevel): Promise<InterpretationResponse> {
-        const systemPrompt = this.buildSystemPrompt(depth);
-        const rawResponse = await this.generateText(systemPrompt, input);
-
-        try {
-            const cleanedResponse = this.cleanJsonString(rawResponse);
-            const jsonResponse = JSON.parse(cleanedResponse);
-
-            if (!jsonResponse.interpretation || !Array.isArray(jsonResponse.symbols)) {
-                throw new Error("Invalid JSON structure from AI");
-            }
-            return jsonResponse;
-        } catch (error: any) {
-            console.error("Failed to parse AI response as JSON:", error.message);
-            console.error("Raw AI Response:", rawResponse);
-            // Fallback for safety
-            return {
-                interpretation: "Error: La respuesta de la IA no pudo ser procesada. Esto puede ser un error temporal. Respuesta original: " + rawResponse,
-                symbols: []
-            };
-        }
-    }
-
-    public async getSymbolInterpretation(symbol: string, landscapeContext: string): Promise<string> {
-        const systemPrompt = this.buildDeepenSystemPrompt();
-        const userPrompt = `Paisaje Original: \"${landscapeContext}\"\n\nSímbolo a Profundizar: \"${symbol}\"`;
-        
-        const interpretation = await this.generateText(systemPrompt, userPrompt);
-        return interpretation;
-    }
-
-    public async getSimpleResponse(prompt: string, role?: string): Promise<string> {
-        const systemPrompt = role || "Eres un asistente de IA útil.";
-        return this.generateText(systemPrompt, prompt);
-    }
-    
-    public async analyzeImage(prompt: string): Promise<string> {
-        try {
-            const result = await this.visionModel.generateContent(prompt);
-            return result.response.text();
-        } catch (error) {
-            console.error("Error during image analysis:", error);
-            throw new Error("Failed to analyze image with AI model.");
-        }
-    }
-}
-
-// --- Service Singleton Export ---
-
-// Export a singleton instance of the service
-export const aiService = new AIService(config.GEMINI_API_KEY);
+  }
+  return null;
+};

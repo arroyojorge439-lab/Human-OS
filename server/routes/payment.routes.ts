@@ -1,10 +1,8 @@
+import express from "express";
+import { createCheckoutSession } from "../controllers/payment.controller.ts";
 
-import { Router } from 'express';
-import { createCheckoutSession, handleStripeWebhook } from '../controllers/payment.controller';
+const router = express.Router();
 
-const router = Router();
-
-router.post('/create-checkout-session', createCheckoutSession);
-router.post('/stripe-webhook', handleStripeWebhook);
+router.post("/create-checkout-session", createCheckoutSession);
 
 export default router;
